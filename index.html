@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Josiah's Starters</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FAFAF8; --card:#FFFFFF; --ink:#17211B;
+    --field:#1E5B3B; --field-deep:#123A26; --line:#E4E8E3;
+    --muted:#6B776E; --flag:#E7B32E;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"Inter",system-ui,-apple-system,sans-serif;
+    line-height:1.45; -webkit-font-smoothing:antialiased;
+    padding:0 18px 64px;
+  }
+  .wrap{max-width:560px;margin:0 auto}
+  header{padding:34px 0 22px;border-bottom:2px solid var(--ink)}
+  .kicker{
+    font-family:"Oswald",sans-serif;font-weight:500;letter-spacing:.02em;
+    color:var(--field);font-size:.98rem;margin:0 0 2px;
+  }
+  .week{font-family:"Oswald",sans-serif;font-weight:600;
+    font-size:clamp(2.6rem,13vw,3.8rem);line-height:.92;margin:0}
+  .week .flag{color:var(--flag)}
+  .season{color:var(--muted);font-size:.92rem;margin:6px 0 0}
+  .updated{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
+  .updated span{color:var(--muted);font-size:.82rem}
+  button.refresh{
+    font-family:"Oswald",sans-serif;font-weight:500;font-size:.9rem;
+    color:var(--field);background:transparent;border:1.5px solid var(--field);
+    border-radius:999px;padding:6px 16px;cursor:pointer;
+  }
+  button.refresh:hover{background:var(--field);color:#fff}
+  button.refresh:focus-visible{outline:2px solid var(--flag);outline-offset:2px}
+  button.refresh:disabled{opacity:.5;cursor:default}
+  .league{
+    background:var(--card);border:1px solid var(--line);
+    border-top:4px solid var(--field);border-radius:4px;
+    margin-top:22px;overflow:hidden;
+  }
+  .league h2{font-family:"Oswald",sans-serif;font-weight:600;font-size:1.35rem;
+    margin:0;padding:16px 18px 12px;line-height:1.1}
+  .yhead{display:flex;align-items:center;justify-content:space-between}
+  ul{list-style:none;margin:0;padding:0}
+  li{display:flex;align-items:center;gap:14px;padding:11px 18px;border-top:1px solid var(--line)}
+  .slot{
+    font-family:"Oswald",sans-serif;font-weight:600;font-size:.8rem;
+    color:var(--field);background:#EAF2ED;min-width:44px;text-align:center;
+    padding:4px 6px;border-radius:3px;flex-shrink:0;
+  }
+  .name{font-size:1.06rem;font-weight:500}
+  .name.def{color:var(--field-deep)}
+  .name.empty{color:var(--muted);font-weight:400}
+  .ystatus{padding:2px 18px 18px;color:var(--muted)}
+  .status{text-align:center;color:var(--muted);padding:48px 12px;font-size:1rem}
+  .status.err{color:var(--field-deep)}
+  .status button{display:block;margin:16px auto 0;font-family:"Oswald",sans-serif;
+    font-size:.95rem;color:#fff;background:var(--field);border:none;border-radius:999px;
+    padding:9px 22px;cursor:pointer}
+  .spinner{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--field);
+    border-radius:50%;margin:0 auto 16px;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spinner{animation:none}}
+  footer{margin-top:30px;color:var(--muted);font-size:.78rem;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">Josiah's starters</p>
+    <h1 class="week" id="week">Week&nbsp;<span class="flag">–</span></h1>
+    <p class="season" id="season"></p>
+    <div class="updated">
+      <span id="updated"></span>
+      <button class="refresh" id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <div id="content">
+    <div class="status"><div class="spinner"></div>Pulling this week's lineups…</div>
+  </div>
+  <div id="yahoo"></div>
+  <footer>Sleeper teams update on their own. Yahoo is edited in the file.</footer>
+</div>
+
+<script>
+/* ============================================================
+   EDIT THIS SECTION
+   ============================================================ */
+
+// Your Sleeper username (no @):
+const USERNAME = "JosiahG2187";
+
+// Leave as [] to show all your current-season NFL leagues.
+// If you're in more than the two you want, put the two league IDs
+// here (each is in that league's Sleeper URL), e.g. ["123","456"].
+const ONLY_LEAGUE_IDS = [];
+
+// ---- YOUR YAHOO STARTERS — edit these each week ----
+// One player per line, inside the quotes. Put the slot before a
+// colon if you want the little tag (e.g. "QB: Josh Allen"), or
+// just type the name. Blank lines are ignored.
+const YAHOO_LINEUP = [
+  "QB: ",
+  "RB: ",
+  "RB: ",
+  "WR: ",
+  "WR: ",
+  "TE: ",
+  "FLEX: ",
+  "K: ",
+  "DEF: "
+];
+
+/* ============================================================
+   No need to edit below here.
+   ============================================================ */
+
+const API = "https://api.sleeper.app/v1";
+let PLAYERS = null;
+
+const SLOT = {
+  QB:"QB", RB:"RB", WR:"WR", TE:"TE", FLEX:"FLEX",
+  SUPER_FLEX:"SFLX", REC_FLEX:"W/T", WRRB_FLEX:"W/R", WRRB_WRT:"FLEX",
+  K:"K", DEF:"DEF", DL:"DL", LB:"LB", DB:"DB", IDP_FLEX:"IDP", DEF_FLEX:"DEF"
+};
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+async function getJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(url + " -> " + r.status);
+  return r.json();
+}
+
+function startingSlots(rp){ return (rp||[]).filter(p => !["BN","IR","TAXI"].includes(p)); }
+
+function renderName(id){
+  if(!id || id === "0") return {label:"—", cls:"empty"};
+  const p = PLAYERS && PLAYERS[id];
+  if(p){
+    const full = (p.full_name || `${p.first_name||""} ${p.last_name||""}`).trim();
+    if(p.position === "DEF") return {label: full || `${id} D/ST`, cls:"def"};
+    return {label: full || id, cls:""};
+  }
+  if(/^[A-Za-z]{2,4}$/.test(id)) return {label:`${id} D/ST`, cls:"def"};
+  return {label:id, cls:""};
+}
+
+/* ---- Yahoo (static, edited in the file above) ---- */
+function parseYahoo(arr){
+  return (arr||[]).map(l => String(l).trim()).map(line => {
+    const i = line.indexOf(":");
+    return i > -1
+      ? { slot: line.slice(0,i).trim(), name: line.slice(i+1).trim() }
+      : { slot:"", name: line };
+  }).filter(r => r.name);
+}
+function renderYahoo(){
+  const host = document.getElementById("yahoo");
+  const rows = parseYahoo(YAHOO_LINEUP);
+  const body = rows.length
+    ? `<ul>${rows.map(r =>
+        `<li><span class="slot">${esc(r.slot)||"—"}</span><span class="name">${esc(r.name)}</span></li>`
+      ).join("")}</ul>`
+    : `<div class="ystatus">Add your Yahoo starters in the file to show them here.</div>`;
+  host.innerHTML = `<section class="league"><div class="yhead"><h2>Yahoo</h2></div>${body}</section>`;
+}
+
+/* ---- Sleeper (live) ---- */
+async function load(){
+  const content = document.getElementById("content");
+  const btn = document.getElementById("refresh");
+  btn.disabled = true;
+  content.innerHTML = '<div class="status"><div class="spinner"></div>Pulling this week\'s lineups…</div>';
+
+  try{
+    const state = await getJSON(`${API}/state/nfl`);
+    const week = state.week || state.display_week || 1;
+    document.getElementById("week").innerHTML = `Week&nbsp;<span class="flag">${week}</span>`;
+    document.getElementById("season").textContent = `${state.season} season`;
+
+    const user = await getJSON(`${API}/user/${USERNAME}`);
+    if(!user || !user.user_id) throw {kind:"user"};
+    const uid = user.user_id;
+
+    let season = state.season;
+    let leagues = await getJSON(`${API}/user/${uid}/leagues/nfl/${season}`);
+    if(!leagues || leagues.length === 0){
+      season = String(Number(state.season) - 1);
+      leagues = await getJSON(`${API}/user/${uid}/leagues/nfl/${season}`);
+    }
+    if(ONLY_LEAGUE_IDS.length) leagues = leagues.filter(l => ONLY_LEAGUE_IDS.includes(l.league_id));
+    if(!leagues || leagues.length === 0) throw {kind:"noleagues", season};
+
+    if(!PLAYERS) PLAYERS = await getJSON(`${API}/players/nfl`);
+
+    const cards = [];
+    for(const lg of leagues){
+      const rosters = await getJSON(`${API}/league/${lg.league_id}/rosters`);
+      const mine = rosters.find(r => r.owner_id === uid || (r.co_owners && r.co_owners.includes(uid)));
+      if(!mine) continue;
+
+      let starters = null;
+      try{
+        const matchups = await getJSON(`${API}/league/${lg.league_id}/matchups/${week}`);
+        const m = matchups.find(x => x.roster_id === mine.roster_id);
+        if(m && m.starters && m.starters.length) starters = m.starters;
+      }catch(_){}
+      if(!starters) starters = mine.starters || [];
+
+      const slots = startingSlots(lg.roster_positions);
+      const rows = starters.map((pid, i) => {
+        const slot = SLOT[slots[i]] || slots[i] || "";
+        const n = renderName(pid);
+        return `<li><span class="slot">${slot}</span><span class="name ${n.cls}">${n.label}</span></li>`;
+      }).join("");
+      cards.push(`<section class="league"><h2>${esc(lg.name || "League")}</h2><ul>${rows}</ul></section>`);
+    }
+
+    content.innerHTML = cards.length ? cards.join("")
+      : '<div class="status">No teams found for this user in those leagues.</div>';
+
+    const now = new Date();
+    document.getElementById("updated").textContent =
+      "Updated " + now.toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"});
+  }catch(e){
+    let msg = "Couldn't load the lineups. Check your connection and try again.";
+    if(e && e.kind === "user") msg = `Couldn't find the Sleeper user "${USERNAME}". The username may have changed.`;
+    if(e && e.kind === "noleagues") msg = `No NFL leagues found for ${e.season}.`;
+    content.innerHTML = `<div class="status err">${msg}<button type="button" id="retry">Try again</button></div>`;
+    const retry = document.getElementById("retry");
+    if(retry) retry.addEventListener("click", load);
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("refresh").addEventListener("click", load);
+renderYahoo();
+load();
+</script>
+</body>
+</html>
