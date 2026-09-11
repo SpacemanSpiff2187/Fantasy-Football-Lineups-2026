@@ -59,6 +59,10 @@
   .name{font-size:1.06rem;font-weight:500}
   .name.def{color:var(--field-deep)}
   .name.empty{color:var(--muted);font-weight:400}
+  .team{
+    margin-left:auto;font-family:"Oswald",sans-serif;font-weight:500;
+    font-size:.78rem;letter-spacing:.03em;color:var(--muted);flex-shrink:0;
+  }
   .ystatus{padding:2px 18px 18px;color:var(--muted)}
   .status{text-align:center;color:var(--muted);padding:48px 12px;font-size:1rem}
   .status.err{color:var(--field-deep)}
@@ -105,18 +109,20 @@ const ONLY_LEAGUE_IDS = [];
 
 // ---- YOUR YAHOO STARTERS — edit these each week ----
 // One player per line, inside the quotes. Put the slot before a
-// colon if you want the little tag (e.g. "QB: Josh Allen"), or
-// just type the name. Blank lines are ignored.
+// colon if you want the little tag (e.g. "QB: Josh Allen"). To show
+// the player's team, add it in parentheses at the end
+// (e.g. "QB: Josh Allen (BUF)"). Both are optional. Blank lines
+// are ignored.
 const YAHOO_LINEUP = [
-  "QB:Trevor Lawrence ",
-  "RB:Devon Achane ",
-  "RB:Cam Skettebo ",
-  "WR:Amon-Ra St. Brown ",
-  "WR:Ladd McConkey ",
-  "TE:Trey McBride ",
-  "FLEX:Malik Nabers ",
-  "K:Jake Bates ",
-  "DEF:LA Chargers "
+  "QB: ",
+  "RB: ",
+  "RB: ",
+  "WR: ",
+  "WR: ",
+  "TE: ",
+  "FLEX: ",
+  "K: ",
+  "DEF: "
 ];
 
 /* ============================================================
@@ -148,7 +154,7 @@ function renderName(id){
   if(p){
     const full = (p.full_name || `${p.first_name||""} ${p.last_name||""}`).trim();
     if(p.position === "DEF") return {label: full || `${id} D/ST`, cls:"def"};
-    return {label: full || id, cls:""};
+    return {label: full || id, cls:"", team: p.team || ""};
   }
   if(/^[A-Za-z]{2,4}$/.test(id)) return {label:`${id} D/ST`, cls:"def"};
   return {label:id, cls:""};
@@ -158,9 +164,12 @@ function renderName(id){
 function parseYahoo(arr){
   return (arr||[]).map(l => String(l).trim()).map(line => {
     const i = line.indexOf(":");
-    return i > -1
-      ? { slot: line.slice(0,i).trim(), name: line.slice(i+1).trim() }
-      : { slot:"", name: line };
+    let slot = "", name = line;
+    if(i > -1){ slot = line.slice(0,i).trim(); name = line.slice(i+1).trim(); }
+    let team = "";
+    const m = name.match(/\(([^)]+)\)\s*$/);
+    if(m){ team = m[1].trim(); name = name.slice(0, m.index).trim(); }
+    return { slot, name, team };
   }).filter(r => r.name);
 }
 function renderYahoo(){
@@ -168,7 +177,7 @@ function renderYahoo(){
   const rows = parseYahoo(YAHOO_LINEUP);
   const body = rows.length
     ? `<ul>${rows.map(r =>
-        `<li><span class="slot">${esc(r.slot)||"—"}</span><span class="name">${esc(r.name)}</span></li>`
+        `<li><span class="slot">${esc(r.slot)||"—"}</span><span class="name">${esc(r.name)}</span>${r.team ? `<span class="team">${esc(r.team)}</span>` : ""}</li>`
       ).join("")}</ul>`
     : `<div class="ystatus">Add your Yahoo starters in the file to show them here.</div>`;
   host.innerHTML = `<section class="league"><div class="yhead"><h2>Yahoo</h2></div>${body}</section>`;
@@ -220,7 +229,8 @@ async function load(){
       const rows = starters.map((pid, i) => {
         const slot = SLOT[slots[i]] || slots[i] || "";
         const n = renderName(pid);
-        return `<li><span class="slot">${slot}</span><span class="name ${n.cls}">${n.label}</span></li>`;
+        const team = n.team ? `<span class="team">${esc(n.team)}</span>` : "";
+        return `<li><span class="slot">${slot}</span><span class="name ${n.cls}">${esc(n.label)}</span>${team}</li>`;
       }).join("");
       cards.push(`<section class="league"><h2>${esc(lg.name || "League")}</h2><ul>${rows}</ul></section>`);
     }
