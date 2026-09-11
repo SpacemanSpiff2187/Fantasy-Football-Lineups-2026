@@ -47,7 +47,9 @@
     margin-top:22px;overflow:hidden;
   }
   .league h2{font-family:"Oswald",sans-serif;font-weight:600;font-size:1.35rem;
-    margin:0;padding:16px 18px 12px;line-height:1.1}
+    margin:0;padding:16px 18px 12px;line-height:1.1;
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .total{font-size:1.05rem;color:var(--field);font-weight:600;font-variant-numeric:tabular-nums}
   .yhead{display:flex;align-items:center;justify-content:space-between}
   ul{list-style:none;margin:0;padding:0}
   li{display:flex;align-items:center;gap:14px;padding:11px 18px;border-top:1px solid var(--line)}
@@ -56,12 +58,19 @@
     color:var(--field);background:#EAF2ED;min-width:44px;text-align:center;
     padding:4px 6px;border-radius:3px;flex-shrink:0;
   }
+  .who{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0}
   .name{font-size:1.06rem;font-weight:500}
   .name.def{color:var(--field-deep)}
   .name.empty{color:var(--muted);font-weight:400}
-  .team{
-    margin-left:auto;font-family:"Oswald",sans-serif;font-weight:500;
-    font-size:.78rem;letter-spacing:.03em;color:var(--muted);flex-shrink:0;
+  .meta{
+    font-family:"Oswald",sans-serif;font-weight:500;
+    font-size:.74rem;letter-spacing:.03em;color:var(--muted);
+  }
+  .ymiss{color:#B23A2E}
+  .pts{
+    font-family:"Oswald",sans-serif;font-weight:600;font-size:1.05rem;
+    color:var(--field);flex-shrink:0;font-variant-numeric:tabular-nums;
+    min-width:42px;text-align:right;
   }
   .ystatus{padding:2px 18px 18px;color:var(--muted)}
   .status{text-align:center;color:var(--muted);padding:48px 12px;font-size:1rem}
@@ -108,21 +117,24 @@ const USERNAME = "JosiahG2187";
 const ONLY_LEAGUE_IDS = [];
 
 // ---- YOUR YAHOO STARTERS — edit these each week ----
-// One player per line, inside the quotes. Put the slot before a
-// colon if you want the little tag (e.g. "QB: Josh Allen"). To show
-// the player's team, add it in parentheses at the end
-// (e.g. "QB: Josh Allen (BUF)"). Both are optional. Blank lines
-// are ignored.
+// Type one player per line inside the quotes, slot before the colon
+// (e.g. "QB: Josh Allen"). The team, jersey number, and live PPR
+// score fill in automatically once the name matches a Sleeper player.
+// - If two players share a name, add the team in parentheses to pick
+//   the right one, e.g. "WR: Mike Williams (NYJ)".
+// - For a defense, put the team abbreviation in parentheses,
+//   e.g. "DEF: Broncos (DEN)".
+// Blank lines are ignored.
 const YAHOO_LINEUP = [
-  "QB:Trevor Lawrence (JAX) ",
-  "RB:Devon Achane (MIA) ",
-  "RB:Cam Skattebo (NYG) ",
-  "WR:Amon-Ra St.Brown (DET) ",
-  "WR:Ladd McConkey (LAC) ",
-  "TE:Trey McBride (Ari) ",
-  "FLEX:Malik Nabers (NYG) ",
-  "K:Jake Bates (Det) ",
-  "DEF:LAC "
+  "QB: ",
+  "RB: ",
+  "RB: ",
+  "WR: ",
+  "WR: ",
+  "TE: ",
+  "FLEX: ",
+  "K: ",
+  "DEF: "
 ];
 
 /* ============================================================
@@ -130,7 +142,7 @@ const YAHOO_LINEUP = [
    ============================================================ */
 
 const API = "https://api.sleeper.app/v1";
-let PLAYERS = null;
+let PLAYERS = null, STATS = null, NAME_INDEX = null, DEF_INDEX = null;
 
 const SLOT = {
   QB:"QB", RB:"RB", WR:"WR", TE:"TE", FLEX:"FLEX",
@@ -154,33 +166,106 @@ function renderName(id){
   if(p){
     const full = (p.full_name || `${p.first_name||""} ${p.last_name||""}`).trim();
     if(p.position === "DEF") return {label: full || `${id} D/ST`, cls:"def"};
-    return {label: full || id, cls:"", team: p.team || ""};
+    return {label: full || id, cls:"", team: p.team || "", number: (p.number != null ? p.number : "")};
   }
   if(/^[A-Za-z]{2,4}$/.test(id)) return {label:`${id} D/ST`, cls:"def"};
   return {label:id, cls:""};
 }
 
-/* ---- Yahoo (static, edited in the file above) ---- */
+function metaTag(number, team){
+  const parts = [];
+  if(number !== "" && number != null) parts.push("#" + esc(String(number)));
+  if(team) parts.push(esc(team));
+  return parts.length ? `<span class="meta">${parts.join(" · ")}</span>` : "";
+}
+
+/* ---- Yahoo (names edited in the file; team/number/score matched from Sleeper) ---- */
 function parseYahoo(arr){
   return (arr||[]).map(l => String(l).trim()).map(line => {
     const i = line.indexOf(":");
     let slot = "", name = line;
     if(i > -1){ slot = line.slice(0,i).trim(); name = line.slice(i+1).trim(); }
     let team = "";
-    const m = name.match(/\(([^)]+)\)\s*$/);
-    if(m){ team = m[1].trim(); name = name.slice(0, m.index).trim(); }
-    return { slot, name, team };
+    const tm = name.match(/\(([^)]+)\)\s*$/);
+    if(tm){ team = tm[1].trim(); name = name.slice(0, tm.index).trim(); }
+    let number = "";
+    const nm = name.match(/#(\d+)/);
+    if(nm){ number = nm[1]; name = name.replace(/#\d+/, "").replace(/\s{2,}/g," ").trim(); }
+    return { slot, name, team, number };
   }).filter(r => r.name);
 }
+
+function normName(s){
+  return String(s).toLowerCase()
+    .replace(/[.'’,]/g,"")
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b/g,"")
+    .replace(/\s+/g," ").trim();
+}
+function buildIndex(){
+  NAME_INDEX = {}; DEF_INDEX = {};
+  for(const id in PLAYERS){
+    const p = PLAYERS[id]; if(!p) continue;
+    if(p.position === "DEF"){
+      const ab = (p.team || (/^[A-Za-z]{2,4}$/.test(id) ? id : "")).toUpperCase();
+      if(ab) DEF_INDEX[ab] = id;
+    }
+    const full = (p.full_name || `${p.first_name||""} ${p.last_name||""}`).trim();
+    if(!full) continue;
+    const key = normName(full);
+    (NAME_INDEX[key] = NAME_INDEX[key] || []).push(
+      { id, team:(p.team||"").toUpperCase(), position:(p.position||"") });
+  }
+}
+function matchYahoo(entry){
+  if(!PLAYERS) return { status:"nodata" };
+  if(!NAME_INDEX) buildIndex();
+  const teamAbbr = entry.team ? entry.team.toUpperCase() : "";
+  const slotU = (entry.slot || "").toUpperCase();
+  if(slotU.includes("DEF") || slotU.includes("DST")){
+    if(teamAbbr && DEF_INDEX[teamAbbr]) return { status:"ok", id:DEF_INDEX[teamAbbr] };
+  }
+  const cands = NAME_INDEX[normName(entry.name)] || [];
+  let f = cands;
+  if(teamAbbr){ const t = cands.filter(c => c.team === teamAbbr); if(t.length) f = t; }
+  if(f.length > 1 && slotU){ const p = f.filter(c => c.position === slotU); if(p.length) f = p; }
+  if(f.length === 1) return { status:"ok", id:f[0].id };
+  if(f.length > 1) return { status:"ambiguous" };
+  return { status:"nomatch" };
+}
+
 function renderYahoo(){
   const host = document.getElementById("yahoo");
   const rows = parseYahoo(YAHOO_LINEUP);
-  const body = rows.length
-    ? `<ul>${rows.map(r =>
-        `<li><span class="slot">${esc(r.slot)||"—"}</span><span class="name">${esc(r.name)}</span>${r.team ? `<span class="team">${esc(r.team)}</span>` : ""}</li>`
-      ).join("")}</ul>`
-    : `<div class="ystatus">Add your Yahoo starters in the file to show them here.</div>`;
-  host.innerHTML = `<section class="league"><div class="yhead"><h2>Yahoo</h2></div>${body}</section>`;
+  if(!rows.length){
+    host.innerHTML = `<section class="league"><h2>Yahoo</h2><div class="ystatus">Add your Yahoo starters in the file to show them here.</div></section>`;
+    return;
+  }
+  let teamPts = 0, haveScores = false;
+  const lis = rows.map(r => {
+    const mm = matchYahoo(r);
+    let name = r.name, cls = "", number = r.number, team = r.team, pts = null, note = "";
+    if(mm.status === "ok"){
+      const p = PLAYERS[mm.id] || {};
+      const full = (p.full_name || `${p.first_name||""} ${p.last_name||""}`).trim();
+      if(full) name = full;
+      if(p.position === "DEF") cls = "def";
+      if(number === "" && p.number != null) number = p.number;
+      if(!team && p.team) team = p.team;
+      const st = STATS && STATS[mm.id];
+      pts = (st && typeof st.pts_ppr === "number") ? st.pts_ppr : 0;
+      haveScores = true; teamPts += pts;
+    } else if(mm.status === "ambiguous"){
+      note = "add team in ( ) to pick one";
+    } else if(mm.status === "nomatch"){
+      note = "no match — check spelling";
+    }
+    const meta = metaTag(number, team);
+    const noteTag = note ? `<span class="meta ymiss">${esc(note)}</span>` : "";
+    const ptsTag = (pts != null) ? `<span class="pts">${pts.toFixed(1)}</span>` : "";
+    return `<li><span class="slot">${esc(r.slot)||"—"}</span><div class="who"><span class="name ${cls}">${esc(name)}</span>${meta}${noteTag}</div>${ptsTag}</li>`;
+  }).join("");
+  const total = haveScores ? `<span class="total">${teamPts.toFixed(1)}</span>` : "";
+  host.innerHTML = `<section class="league"><h2>Yahoo${total}</h2><ul>${lis}</ul></section>`;
 }
 
 /* ---- Sleeper (live) ---- */
@@ -193,6 +278,7 @@ async function load(){
   try{
     const state = await getJSON(`${API}/state/nfl`);
     const week = state.week || state.display_week || 1;
+    const stateSeason = state.season;
     document.getElementById("week").innerHTML = `Week&nbsp;<span class="flag">${week}</span>`;
     document.getElementById("season").textContent = `${state.season} season`;
 
@@ -210,6 +296,10 @@ async function load(){
     if(!leagues || leagues.length === 0) throw {kind:"noleagues", season};
 
     if(!PLAYERS) PLAYERS = await getJSON(`${API}/players/nfl`);
+    try{
+      STATS = await getJSON(`${API}/stats/nfl/regular/${stateSeason}/${week}`);
+      if(Array.isArray(STATS)){ const mp={}; for(const s of STATS){ const id=s.player_id||s.id; if(id) mp[id]=s; } STATS=mp; }
+    }catch(_){ STATS = STATS || {}; }
 
     const cards = [];
     for(const lg of leagues){
@@ -217,11 +307,16 @@ async function load(){
       const mine = rosters.find(r => r.owner_id === uid || (r.co_owners && r.co_owners.includes(uid)));
       if(!mine) continue;
 
-      let starters = null;
+      let starters = null, sPoints = null, pPoints = null, teamPts = null;
       try{
         const matchups = await getJSON(`${API}/league/${lg.league_id}/matchups/${week}`);
         const m = matchups.find(x => x.roster_id === mine.roster_id);
-        if(m && m.starters && m.starters.length) starters = m.starters;
+        if(m && m.starters && m.starters.length){
+          starters = m.starters;
+          sPoints = Array.isArray(m.starters_points) ? m.starters_points : null;
+          pPoints = m.players_points || null;
+          teamPts = (typeof m.points === "number") ? m.points : null;
+        }
       }catch(_){}
       if(!starters) starters = mine.starters || [];
 
@@ -229,14 +324,21 @@ async function load(){
       const rows = starters.map((pid, i) => {
         const slot = SLOT[slots[i]] || slots[i] || "";
         const n = renderName(pid);
-        const team = n.team ? `<span class="team">${esc(n.team)}</span>` : "";
-        return `<li><span class="slot">${slot}</span><span class="name ${n.cls}">${esc(n.label)}</span>${team}</li>`;
+        const meta = metaTag(n.number, n.team);
+        let pts = null;
+        if(sPoints && typeof sPoints[i] === "number") pts = sPoints[i];
+        else if(pPoints && typeof pPoints[pid] === "number") pts = pPoints[pid];
+        const ptsTag = (pts != null) ? `<span class="pts">${pts.toFixed(1)}</span>` : "";
+        return `<li><span class="slot">${slot}</span><div class="who"><span class="name ${n.cls}">${esc(n.label)}</span>${meta}</div>${ptsTag}</li>`;
       }).join("");
-      cards.push(`<section class="league"><h2>${esc(lg.name || "League")}</h2><ul>${rows}</ul></section>`);
+      const total = (teamPts != null) ? `<span class="total">${teamPts.toFixed(1)}</span>` : "";
+      cards.push(`<section class="league"><h2>${esc(lg.name || "League")}${total}</h2><ul>${rows}</ul></section>`);
     }
 
     content.innerHTML = cards.length ? cards.join("")
       : '<div class="status">No teams found for this user in those leagues.</div>';
+
+    renderYahoo();
 
     const now = new Date();
     document.getElementById("updated").textContent =
